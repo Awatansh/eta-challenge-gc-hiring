@@ -1,13 +1,13 @@
 # Your Submission: Writeup Template
 
-*Replace this file's contents when you submit. A good writeup is ~1 page.
-We read every one.*
+_Replace this file's contents when you submit. A good writeup is ~1 page.
+We read every one._
 
 ---
 
 ## Your final score
 
-Dev MAE: **___ s**
+Dev MAE: **287.1995 s**
 
 ---
 
@@ -37,4 +37,4 @@ _What's the next experiment you'd run if you kept going?_
 
 ---
 
-_Total time spent on this challenge: ___ hours._
+\_Total time spent on this challenge: _\_\_ hours._

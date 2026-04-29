@@ -2,4 +2,4 @@
 
 from __future__ import annotations
 
-from solution.predict import predict
+from solution.eta_pipeline import predict

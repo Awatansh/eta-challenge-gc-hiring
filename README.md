@@ -1,6 +1,6 @@
 # The ETA Challenge
 
-*A Gobblecube take-home: build the ride-hailing ETA engine.*
+_A Gobblecube take-home: build the ride-hailing ETA engine._
 
 ---
 
@@ -8,7 +8,7 @@
 
 You've just joined the forecasting team at a ride-hailing company.
 
-Every time a rider opens the app, they see an ETA: *"Your driver arrives in 4 minutes. Trip takes 18 minutes."* That number is the difference between a happy rider and a cancelled trip. It's the difference between a driver earning and a driver idling. Every second of prediction error, at scale, costs real money.
+Every time a rider opens the app, they see an ETA: _"Your driver arrives in 4 minutes. Trip takes 18 minutes."_ That number is the difference between a happy rider and a cancelled trip. It's the difference between a driver earning and a driver idling. Every second of prediction error, at scale, costs real money.
 
 Your job: given a ride request and a year of historical trips, predict the ride duration as accurately as you can.
 
@@ -68,10 +68,10 @@ Lower is better. We run your Docker image in a sandbox, stream eval requests thr
 
 For reference, measured on the Dev set:
 
-| Approach | Dev MAE |
-|---|---|
-| Predict the global mean | ~580 s |
-| Zone-pair averages (10 lines, no ML) | ~300 s |
+| Approach                                          | Dev MAE    |
+| ------------------------------------------------- | ---------- |
+| Predict the global mean                           | ~580 s     |
+| Zone-pair averages (10 lines, no ML)              | ~300 s     |
 | **GBT baseline (this repo, intentionally naive)** | **~350 s** |
 
 Use Dev as a self-check. Baseline scores ~351 s on Dev and ~367 s on
@@ -175,9 +175,11 @@ No. Individual submissions only.
 ## 6. Resources
 
 ### 6.1 Libraries we've seen work well
+
 `pandas`, `numpy`, `polars`, `scikit-learn`, `xgboost`, `lightgbm`, `torch`, `transformers`, `pytorch-lightning`, `geopandas`, `osrm-backend`.
 
 ### 6.2 Datasets you may find useful
+
 - NYC TLC trip records (included via `download_data.py`)
 - NYC taxi zone shapefile (for centroid coords): https://d37ci6vzurychx.cloudfront.net/misc/taxi_zones.zip
 - NOAA hourly weather for JFK/LGA/NYC: https://www.ncei.noaa.gov/access/services/data/v1
@@ -192,6 +194,7 @@ Deep-learning approaches benefit substantially from GPU training.
 If you don't have one: free-tier notebook environments (Kaggle, Colab, Lightning.ai) each offer ~30 GPU-hours per week, which has typically been enough compute. How you use that compute is part of the test.
 
 ### 6.4 Things that will disqualify you
+
 - Using the 2024 eval set during training
 - Submitting something that does not run in our sandbox
 - Hardcoding per-request predictions (we fuzz requests)
@@ -217,4 +220,4 @@ Good luck. We're excited to see what you ship.
 
 ---
 
-*Submit your repo URL to agentic-hiring@gobblecube.ai. Questions welcome at the same address.*
+_Submit your repo URL to agentic-hiring@gobblecube.ai. Questions welcome at the same address._
