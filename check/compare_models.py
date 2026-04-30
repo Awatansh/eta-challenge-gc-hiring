@@ -4,8 +4,8 @@
 Usage:
   python check/compare_models.py [--sample N]
 
-This script loads or trains the baseline `model.pkl` (if missing), loads
-the `solution/solution.pkl`, scores both on `data/dev.parquet` (or a
+This script loads or trains the baseline `base.pkl` (if missing), loads
+the `solution/model.pkl`, scores both on `data/dev.parquet` (or a
 random sample) and prints MAE and latency numbers.
 """
 
@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import argparse
 import pickle
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -22,13 +24,16 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 DEV_PARQUET = DATA_DIR / "dev.parquet"
-BASELINE_MODEL = ROOT / "model.pkl"
-SOLUTION_MODEL = ROOT / "solution" / "solution.pkl"
+BASELINE_MODEL = ROOT / "base.pkl"
+SOLUTION_MODEL = ROOT / "solution" / "model.pkl"
+
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 def ensure_baseline_model():
     if BASELINE_MODEL.exists():
-        print("Baseline model found: model.pkl")
+        print("Baseline model found: base.pkl")
         with open(BASELINE_MODEL, "rb") as f:
             model = pickle.load(f)
         return model
@@ -45,6 +50,12 @@ def ensure_baseline_model():
 
 def load_solution_predictor():
     sol_predict = None
+    if not SOLUTION_MODEL.exists():
+        print("Solution model missing; training solution/train_model.py (this may take minutes)...")
+        trainer = ROOT / "solution" / "train_model.py"
+        if not trainer.exists():
+            raise SystemExit(f"Missing trainer: {trainer}")
+        subprocess.run([sys.executable, str(trainer)], check=True, cwd=str(ROOT))
     try:
         # prefer the package entrypoint
         from solution.predict import predict as sol_predict
@@ -54,7 +65,7 @@ def load_solution_predictor():
         except Exception as exc:
             raise SystemExit(f"Could not import solution predict(): {exc}")
     if not SOLUTION_MODEL.exists():
-        raise SystemExit(f"Missing {SOLUTION_MODEL} — ensure your solution/ folder contains solution.pkl")
+        raise SystemExit(f"Missing {SOLUTION_MODEL} — ensure your solution/ folder contains model.pkl")
     return sol_predict
 
 

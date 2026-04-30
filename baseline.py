@@ -1,17 +1,17 @@
 #!/usr/bin/env python
 """Baseline: gradient-boosted trees on six simple features.
 
-Trains in ~5 minutes on a laptop CPU. Produces `model.pkl` which `predict.py`
+Trains in ~5 minutes on a laptop CPU. Produces `base.pkl` which `predict.py`
 loads at inference.
 
 Prerequisites:
     python data/download_data.py   # one-time, ~500 MB download
 
 Run:
-    python baseline.py             # trains and saves model.pkl
+    python baseline.py             # trains and saves base.pkl
 
 Your job is to replace this file with something better. The grader only cares
-about `predict.py` — this file just needs to produce a `model.pkl` that
+about `predict.py` — this file just needs to produce a `base.pkl` that
 `predict.py` can load.
 """
 
@@ -26,7 +26,7 @@ import pandas as pd
 import xgboost as xgb
 
 DATA_DIR = Path(__file__).parent / "data"
-MODEL_PATH = Path(__file__).parent / "model.pkl"
+MODEL_PATH = Path(__file__).parent / "base.pkl"
 
 FEATURES = ["pickup_zone", "dropoff_zone", "hour", "dow", "month", "passenger_count"]
 

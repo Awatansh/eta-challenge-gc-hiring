@@ -116,7 +116,7 @@ pip install -r requirements.txt
 # ~500 MB download, one-time
 python data/download_data.py
 
-# Trains in ~5 min on a laptop CPU, writes model.pkl
+# Trains in ~5 min on a laptop CPU, writes base.pkl
 python baseline.py
 
 # Scores on Dev
@@ -165,7 +165,7 @@ No. Individual submissions only.
 **What order do I run things in?**
 
 1. `python data/download_data.py` (one-time, ~500 MB)
-2. `python baseline.py` (produces `model.pkl`)
+2. `python baseline.py` (produces `base.pkl`)
 3. `python grade.py` (validates on Dev, prints MAE)
 4. `docker build -t my-eta .` (packages for submission)
 5. `docker run --rm -v $(pwd)/data:/work my-eta /work/dev.parquet /work/preds.csv` (test grader pathway)
