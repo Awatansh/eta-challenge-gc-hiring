@@ -61,6 +61,8 @@ MSYS_NO_PATHCONV=1 docker run --rm -v //c/Users/awatansh/Documents/Dev/arena/eta
 docker run --rm -p 8000:8000 eta-challenge-starter api
 ```
 
+Sample record `curl -X POST localhost:8000/predict -H "Content-Type: application/json" -d '{"pickup_zone": 161, "dropoff_zone": 236, "requested_at": "2024-05-01 12:00:00", "passenger_count": 1}'`
+
 If you want the full Dev comparison, use a sample number of at least 1,230,911.
 
 ### 1. Creation of `model.pkl`
@@ -94,7 +96,8 @@ MSYS_NO_PATHCONV=1 docker run --rm -v //c/Users/awatansh/Documents/Dev/arena/eta
 docker run --rm -p 8000:8000 eta-challenge-starter api
 ```
 
-The Docker container now exposes a dual-purpose CLI wrapper (`solution/predict_cli.py`). 
+The Docker container now exposes a dual-purpose CLI wrapper (`solution/predict_cli.py`).
+
 - **Batch mode** writes predictions directly to a CSV file and is used by the grader.
 - **API mode** spins up a FastAPI server on port 8000 for 1-by-1 inference. You can test it via:
   `curl -X POST localhost:8000/predict -H "Content-Type: application/json" -d '{"pickup_zone": 161, "dropoff_zone": 236, "requested_at": "2024-05-01 12:00:00", "passenger_count": 1}'`

@@ -6,3 +6,5 @@ xgboost>=2.0,<4
 lightgbm>=4.0,<5
 tqdm>=4.66,<5
 pytest>=7.4,<10
+fastapi
+uvicorn

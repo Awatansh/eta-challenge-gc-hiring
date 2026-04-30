@@ -27,4 +27,4 @@ COPY predict.py grade.py ./
 COPY solution ./solution
 COPY model.pkl ./model.pkl
 
-ENTRYPOINT ["python", "solution/predict_cli.py"]
+ENTRYPOINT ["python", "-m", "solution.predict_cli"]
