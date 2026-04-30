@@ -7,7 +7,7 @@ We read every one._
 
 ## Your final score
 
-Dev MAE: **287.1995 s**
+Dev MAE: **280.53171 s**
 
 ---
 
