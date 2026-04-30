@@ -9,6 +9,7 @@ data/raw/
 data/train.parquet
 data/dev.parquet
 data/sample_1M.parquet
+data/preds.csv
 
 
 DATA_FLOW.md

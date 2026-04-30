@@ -17,6 +17,12 @@ REPO_ROOT = PACKAGE_DIR.parent
 MODEL_PATH = REPO_ROOT / "model.pkl"
 MODEL_METADATA_PATH = REPO_ROOT / "model_metadata.json"
 ZONE_REFERENCE_PATH = PACKAGE_DIR / "zone_reference.json"
+KNOWN_CATEGORICAL_FEATURES = {
+    "pickup_zone",
+    "dropoff_zone",
+    "pickup_borough",
+    "dropoff_borough",
+}
 
 
 def _parse_requested_at(value: str) -> datetime:
@@ -90,30 +96,27 @@ def _load_runtime_config() -> dict[str, Any]:
 
     if feature_metadata is not None:
         feature_names = list(feature_metadata["feature_names"])
-        pickup_categories = list(feature_metadata["pickup_borough_categories"])
-        dropoff_categories = list(feature_metadata["dropoff_borough_categories"])
-        pickup_unknown_idx = int(feature_metadata.get("pickup_unknown_idx", 0))
-        dropoff_unknown_idx = int(feature_metadata.get("dropoff_unknown_idx", 0))
+        categorical_maps = {
+            "pickup_borough": {value: idx for idx, value in enumerate(feature_metadata["pickup_borough_categories"])},
+            "dropoff_borough": {value: idx for idx, value in enumerate(feature_metadata["dropoff_borough_categories"])},
+        }
     else:
         feature_names = list(model.feature_name())
         pandas_categorical = list(getattr(model, "pandas_categorical", []))
-        if len(pandas_categorical) < 2:
-            raise RuntimeError("Expected categorical metadata for pickup_borough and dropoff_borough.")
-        pickup_categories = list(pandas_categorical[0])
-        dropoff_categories = list(pandas_categorical[1])
-        pickup_unknown_idx = {value: idx for idx, value in enumerate(pickup_categories)}.get("Unknown", 0)
-        dropoff_unknown_idx = {value: idx for idx, value in enumerate(dropoff_categories)}.get("Unknown", 0)
-
-    pickup_map = {value: idx for idx, value in enumerate(pickup_categories)}
-    dropoff_map = {value: idx for idx, value in enumerate(dropoff_categories)}
+        categorical_feature_names = [name for name in feature_names if name in KNOWN_CATEGORICAL_FEATURES]
+        if len(pandas_categorical) != len(categorical_feature_names):
+            raise RuntimeError(
+                "Expected categorical metadata for pickup_zone, dropoff_zone, pickup_borough, and dropoff_borough."
+            )
+        categorical_maps = {
+            name: {value: idx for idx, value in enumerate(categories)}
+            for name, categories in zip(categorical_feature_names, pandas_categorical)
+        }
 
     return {
         "model": model,
         "feature_names": feature_names,
-        "pickup_borough_map": pickup_map,
-        "dropoff_borough_map": dropoff_map,
-        "pickup_unknown_idx": pickup_unknown_idx,
-        "dropoff_unknown_idx": dropoff_unknown_idx,
+        "categorical_maps": categorical_maps,
     }
 
 
@@ -168,18 +171,15 @@ def build_zone_features(request: dict[str, Any]) -> dict[str, Any]:
 def _encode_features(features: dict[str, Any]) -> np.ndarray:
     config = _load_runtime_config()
     feature_names = config["feature_names"]
-    pickup_map = config["pickup_borough_map"]
-    dropoff_map = config["dropoff_borough_map"]
-    pickup_unknown_idx = config["pickup_unknown_idx"]
-    dropoff_unknown_idx = config["dropoff_unknown_idx"]
+    categorical_maps = config["categorical_maps"]
 
     values: list[float] = []
     for name in feature_names:
         value = features[name]
-        if name == "pickup_borough":
-            values.append(float(pickup_map.get(str(value), pickup_unknown_idx)))
-        elif name == "dropoff_borough":
-            values.append(float(dropoff_map.get(str(value), dropoff_unknown_idx)))
+        if name in categorical_maps:
+            category_map = categorical_maps[name]
+            unknown_idx = category_map.get("Unknown", 0)
+            values.append(float(category_map.get(str(value), unknown_idx)))
         elif isinstance(value, bool):
             values.append(float(int(value)))
         else:

@@ -4,6 +4,14 @@ _A Gobblecube take-home: build the ride-hailing ETA engine._
 
 ---
 
+> **Candidate Submission**
+> **Name:** Awatansh Singh
+> **Email:** awatanshsingh1@gmail.com
+> 
+> *The original challenge instructions and context have been preserved below.*
+
+---
+
 ## The Problem
 
 You've just joined the forecasting team at a ride-hailing company.
