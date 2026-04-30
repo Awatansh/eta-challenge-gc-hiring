@@ -13,8 +13,9 @@ from typing import Any
 import numpy as np
 
 PACKAGE_DIR = Path(__file__).resolve().parent
-MODEL_PATH = PACKAGE_DIR / "model.pkl"
-MODEL_METADATA_PATH = PACKAGE_DIR / "model_metadata.json"
+REPO_ROOT = PACKAGE_DIR.parent
+MODEL_PATH = REPO_ROOT / "model.pkl"
+MODEL_METADATA_PATH = REPO_ROOT / "model_metadata.json"
 ZONE_REFERENCE_PATH = PACKAGE_DIR / "zone_reference.json"
 
 
@@ -58,17 +59,28 @@ def _load_zone_map() -> dict[int, dict[str, Any]]:
 
 @lru_cache(maxsize=1)
 def _load_model() -> Any:
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(f"Missing {MODEL_PATH.name}.")
-    with open(MODEL_PATH, "rb") as handle:
-        return pickle.load(handle)
+    if MODEL_PATH.exists():
+        with open(MODEL_PATH, "rb") as handle:
+            return pickle.load(handle)
+
+    legacy_path = PACKAGE_DIR / "model.pkl"
+    if legacy_path.exists():
+        with open(legacy_path, "rb") as handle:
+            return pickle.load(handle)
+
+    raise FileNotFoundError(f"Missing {MODEL_PATH.name}.")
 
 
 @lru_cache(maxsize=1)
 def _load_feature_metadata() -> dict[str, Any] | None:
-    if not MODEL_METADATA_PATH.exists():
-        return None
-    return json.loads(MODEL_METADATA_PATH.read_text(encoding="utf-8"))
+    if MODEL_METADATA_PATH.exists():
+        return json.loads(MODEL_METADATA_PATH.read_text(encoding="utf-8"))
+
+    legacy_path = PACKAGE_DIR / "model_metadata.json"
+    if legacy_path.exists():
+        return json.loads(legacy_path.read_text(encoding="utf-8"))
+
+    return None
 
 
 @lru_cache(maxsize=1)
@@ -180,8 +192,30 @@ def predict(request: dict[str, Any]) -> float:
     model = config["model"]
     features = build_zone_features(request)
     encoded = _encode_features(features)
-    pred = float(model.predict(encoded)[0])
-    # Keep a tiny deterministic time signal so the public smoke test can
-    # confirm the submission reacts to request time.
-    pred += (float(features["request_hour"]) - 12.0) * 0.01
+
+    # Align encoded vector to the model's expected feature ordering and
+    # dimensionality. This avoids needing any hard-coded prediction tweaks
+    # while keeping training and inference feature shapes consistent.
+    model_feature_names: list[str] = []
+    try:
+        model_feature_names = list(model.feature_name())
+    except Exception:
+        # Some model objects may not expose feature_name(); fall back to
+        # runtime feature list in that case.
+        model_feature_names = list(_load_runtime_config()["feature_names"])  # type: ignore[index]
+
+    if len(model_feature_names) != encoded.shape[1]:
+        aligned = np.zeros((1, len(model_feature_names)), dtype=np.float32)
+        runtime_names = _load_runtime_config()["feature_names"]  # type: ignore[index]
+        for i, fname in enumerate(model_feature_names):
+            if fname in runtime_names:
+                idx = runtime_names.index(fname)
+                aligned[0, i] = encoded[0, idx]
+            else:
+                # Missing feature at inference time -> leave zero (safe default)
+                aligned[0, i] = 0.0
+        pred = float(model.predict(aligned)[0])
+    else:
+        pred = float(model.predict(encoded)[0])
+
     return max(1.0, pred)

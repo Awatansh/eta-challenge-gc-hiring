@@ -1,240 +1,269 @@
 #!/usr/bin/env python3
-"""
-Simplified modular trainer for enriched parquet data.
-
-Local usage:
-    python solution/train_model.py --train-parquet sim/zone_outputs/train_features.parquet --dev-parquet sim/zone_outputs/dev_features.parquet
-
-Kaggle drop-in usage (paste this into a notebook cell):
-    import pandas as pd
-    import json, pickle, subprocess
-    import lightgbm as lgb
-    from sklearn.metrics import mean_absolute_error
-    
-    TARGET = 'duration_seconds'
-    CAT_COLS = ['pickup_borough', 'dropoff_borough']
-    
-    df_train = pd.read_parquet('/kaggle/input/.../train_features.parquet')
-    df_dev = pd.read_parquet('/kaggle/input/.../dev_features.parquet')
-    
-    # Train and save (see train() function below)
-    train(df_train, df_dev)
-"""
-
 from __future__ import annotations
 
 import argparse
 import json
 import pickle
 import subprocess
+import os
+import sys
 from pathlib import Path
+from typing import Optional, Tuple
 
 import lightgbm as lgb
 import pandas as pd
+from sklearn.metrics import mean_absolute_error
 
-# =============================================================================
-# CONSTANTS
-# =============================================================================
+
+# ================================
+# CONFIG
+# ================================
 TARGET = "duration_seconds"
-CAT_COLS = ["pickup_borough", "dropoff_borough"]
 
-DEFAULT_MODEL_PATH = Path(__file__).resolve().parent / "model.pkl"
-DEFAULT_METADATA_PATH = Path(__file__).resolve().parent / "model_metadata.json"
+DROP_COLS = {
+    TARGET,
+    "requested_at",
+    "pickup_zone_name",
+    "dropoff_zone_name",
+    "pickup_centroid_source",
+    "dropoff_centroid_source",
+}
 
+CAT_COLS = [
+    "pickup_borough",
+    "dropoff_borough",
+    "pickup_zone",
+    "dropoff_zone",
+]
 
-# =============================================================================
-# HELPER FUNCTIONS
-# =============================================================================
-def gpu_available() -> bool:
-    """Check if GPU is available."""
+# ================================
+# AUTO PATH RESOLUTION
+# ================================
+def get_repo_root() -> Path:
+    """Find repo root dynamically."""
     try:
-        return subprocess.run(["nvidia-smi"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+        return Path(__file__).resolve().parents[1]
+    except NameError:
+        return Path.cwd()
+
+
+REPO_ROOT = get_repo_root()
+
+DEFAULT_TRAIN_PATH = REPO_ROOT / "sim/zone_outputs/train_features.parquet"
+DEFAULT_DEV_PATH   = REPO_ROOT / "sim/zone_outputs/dev_features.parquet"
+
+DEFAULT_MODEL_PATH = REPO_ROOT / "model.pkl"
+DEFAULT_METADATA_PATH = REPO_ROOT / "model_metadata.json"
+
+
+# ================================
+# UTILITIES
+# ================================
+def gpu_available() -> bool:
+    try:
+        return subprocess.run(
+            ["nvidia-smi"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode == 0
     except Exception:
         return False
 
 
-def prepare_data(
-    df_train: pd.DataFrame, df_dev: pd.DataFrame, max_rows: int | None = None
-) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
-    """
-    Extract features and target, align categories, downcast dtypes.
-    Only includes numeric and categorical features; drops unused string columns.
-    """
-    if max_rows is not None:
-        df_train = df_train.head(max_rows).reset_index(drop=True)
-        df_dev = df_dev.head(max_rows).reset_index(drop=True)
+def get_device(device: str = "auto") -> str:
+    return "gpu" if device == "auto" and gpu_available() else device
 
-    # Exclude target and non-useful string columns
-    drop_set = {TARGET, "requested_at", "pickup_zone_name", "dropoff_zone_name", "pickup_centroid_source", "dropoff_centroid_source"}
-    features = [c for c in df_train.columns if c not in drop_set]
-    
+
+def optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    float_cols = df.select_dtypes(include=["float64"]).columns
+    int_cols = df.select_dtypes(include=["int64"]).columns
+
+    df[float_cols] = df[float_cols].astype("float32")
+    df[int_cols] = df[int_cols].astype("int32")
+
+    return df
+
+
+# ================================
+# DATA PREP
+# ================================
+def prepare_data(
+    df_train: pd.DataFrame,
+    df_dev: pd.DataFrame,
+    max_rows: Optional[int] = None,
+) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
+
+    if max_rows:
+        df_train = df_train.head(max_rows)
+        df_dev = df_dev.head(max_rows)
+
+    features = [c for c in df_train.columns if c not in DROP_COLS]
+
     X_train = df_train[features].copy()
     y_train = df_train[TARGET].copy()
-    X_dev = df_dev[features].copy()
+
+    # safe alignment
+    X_dev = df_dev.reindex(columns=features).copy()
     y_dev = df_dev[TARGET].copy()
 
-    # Categorical alignment (critical for LightGBM)
+    # categorical handling
     for col in CAT_COLS:
         if col in X_train.columns:
+            X_train[col] = X_train[col].astype("string").fillna("Unknown")
+            X_dev[col] = X_dev[col].astype("string").fillna("Unknown")
+
             X_train[col] = pd.Categorical(X_train[col])
-            X_dev[col] = pd.Categorical(X_dev[col], categories=X_train[col].cat.categories)
+            X_dev[col] = pd.Categorical(
+                X_dev[col],
+                categories=X_train[col].cat.categories,
+            )
 
-    # Downcast for memory efficiency
-    for col in X_train.select_dtypes(include=["float64"]).columns:
-        X_train[col] = X_train[col].astype("float32")
-    for col in X_train.select_dtypes(include=["int64"]).columns:
-        X_train[col] = X_train[col].astype("int32")
-
-    for col in X_dev.select_dtypes(include=["float64"]).columns:
-        X_dev[col] = X_dev[col].astype("float32")
-    for col in X_dev.select_dtypes(include=["int64"]).columns:
-        X_dev[col] = X_dev[col].astype("int32")
+    X_train = optimize_dtypes(X_train)
+    X_dev = optimize_dtypes(X_dev)
 
     return X_train, y_train, X_dev, y_dev
 
 
-def train_model(
-    X_train: pd.DataFrame,
-    y_train: pd.Series,
-    X_dev: pd.DataFrame,
-    y_dev: pd.Series,
-    device: str = "auto",
-) -> lgb.Booster:
-    """Train LightGBM model."""
-    if device == "auto":
-        device = "gpu" if gpu_available() else "cpu"
-
+# ================================
+# MODEL
+# ================================
+def build_params(device: str):
     params = {
         "objective": "regression",
         "metric": "mae",
         "device": device,
-        "max_bin": 255,
         "learning_rate": 0.05,
         "num_leaves": 256,
         "min_data_in_leaf": 100,
         "feature_fraction": 0.9,
         "bagging_fraction": 0.8,
         "bagging_freq": 5,
-        "verbosity": -1,
+        "max_bin": 255,
+        "verbosity": -1,  # 🔥 suppress logs
         "seed": 42,
     }
 
+    if device == "gpu":
+        params["gpu_use_dp"] = False
+
+    return params
+
+
+def train_model(X_train, y_train, X_dev, y_dev, device):
+    params = build_params(device)
+
     train_data = lgb.Dataset(
-        X_train, label=y_train, categorical_feature=CAT_COLS, free_raw_data=True
+        X_train,
+        label=y_train,
+        categorical_feature=[c for c in CAT_COLS if c in X_train.columns],
     )
-    valid_data = lgb.Dataset(X_dev, label=y_dev, reference=train_data, free_raw_data=True)
+
+    valid_data = lgb.Dataset(X_dev, label=y_dev)
 
     model = lgb.train(
         params,
         train_data,
         num_boost_round=3000,
         valid_sets=[valid_data],
-        callbacks=[lgb.early_stopping(100), lgb.log_evaluation(100)],
+        callbacks=[
+            lgb.early_stopping(100),
+            lgb.log_evaluation(100),
+        ],
     )
+
     return model
 
 
-def save_artifacts(
-    model: lgb.Booster,
-    X_train: pd.DataFrame,
-    model_path: Path | str = DEFAULT_MODEL_PATH,
-    metadata_path: Path | str = DEFAULT_METADATA_PATH,
-) -> None:
-    """Save model and metadata."""
-    model_path = Path(model_path)
-    metadata_path = Path(metadata_path)
-    model_path.parent.mkdir(parents=True, exist_ok=True)
+# ================================
+# TRAIN
+# ================================
+def train(df_train, df_dev, device="auto"):
+    # ✅ ALWAYS resolve device properly
+    if device == "auto":
+        device = "gpu" if gpu_available() else "cpu"
 
-    with open(model_path, "wb") as f:
+    print("Preparing data...")
+    X_train, y_train, X_dev, y_dev = prepare_data(df_train, df_dev)
+
+    print(f"Train: {X_train.shape}")
+    print(f"Dev:   {X_dev.shape}")
+
+    print(f"Training on {device.upper()}...")
+
+    # 🔥 better suppression (must be before training)
+    import os
+    os.environ["LIGHTGBM_VERBOSE"] = "-1"
+
+    try:
+        model = train_model(X_train, y_train, X_dev, y_dev, device)
+
+    except Exception as e:
+        # 🔥 fallback (VERY IMPORTANT)
+        print(f"⚠️ {device.upper()} failed → falling back to CPU")
+        print("Error:", e)
+
+        model = train_model(X_train, y_train, X_dev, y_dev, "cpu")
+
+    print("Evaluating...")
+    preds = model.predict(X_dev)
+    mae = mean_absolute_error(y_dev, preds)
+    print(f"🔥 MAE: {mae:.5f}")
+
+    with open(DEFAULT_MODEL_PATH, "wb") as f:
         pickle.dump(model, f)
 
-    # Metadata for inference alignment
-    feature_names = list(X_train.columns)
-    pickup_cats = list(X_train["pickup_borough"].cat.categories) if "pickup_borough" in X_train.columns else []
-    dropoff_cats = list(X_train["dropoff_borough"].cat.categories) if "dropoff_borough" in X_train.columns else []
-
-    meta = {
-        "feature_names": feature_names,
-        "pickup_borough_categories": pickup_cats,
-        "dropoff_borough_categories": dropoff_cats,
-        "pickup_unknown_idx": pickup_cats.index("Unknown") if "Unknown" in pickup_cats else 0,
-        "dropoff_unknown_idx": dropoff_cats.index("Unknown") if "Unknown" in dropoff_cats else 0,
-    }
-    metadata_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-    print(f"✅ Saved model to {model_path}")
-    print(f"✅ Saved metadata to {metadata_path}")
-
-
-# =============================================================================
-# MAIN TRAINING FUNCTION
-# =============================================================================
-def train(
-    df_train: pd.DataFrame,
-    df_dev: pd.DataFrame,
-    device: str = "auto",
-    model_path: Path | str = DEFAULT_MODEL_PATH,
-    metadata_path: Path | str = DEFAULT_METADATA_PATH,
-    max_rows: int | None = None,
-) -> lgb.Booster:
-    """
-    End-to-end training: prepare, train, save artifacts.
-    
-    Args:
-        df_train: Training DataFrame (enriched with zone features)
-        df_dev: Dev DataFrame (enriched with zone features)
-        device: 'auto' (default), 'gpu', or 'cpu'
-        model_path: Where to save model.pkl
-        metadata_path: Where to save model_metadata.json
-        max_rows: Optional row cap for quick tests
-    
-    Returns:
-        Trained LightGBM booster
-    """
-    print(f"Preparing data...")
-    X_train, y_train, X_dev, y_dev = prepare_data(df_train, df_dev, max_rows=max_rows)
-    print(f"  Train: {len(X_train):,} rows × {len(X_train.columns)} features")
-    print(f"  Dev:   {len(X_dev):,} rows × {len(X_dev.columns)} features")
-
-    print(f"\nTraining on {(device if device != 'auto' else 'auto').upper()}...")
-    model = train_model(X_train, y_train, X_dev, y_dev, device=device)
-
-    print(f"\nSaving artifacts...")
-    save_artifacts(model, X_train, model_path, metadata_path)
+    print(f"✅ Model saved at: {DEFAULT_MODEL_PATH}")
 
     return model
 
 
-# =============================================================================
-# CLI FOR LOCAL RUNS
-# =============================================================================
-def cli_main() -> None:
-    """Local runner with argparse."""
+# ================================
+# CLI
+# ================================
+def cli_main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train-parquet", type=Path, default=Path("sim/zone_outputs/train_features.parquet"))
-    parser.add_argument("--dev-parquet", type=Path, default=Path("sim/zone_outputs/dev_features.parquet"))
-    parser.add_argument("--model-path", type=Path, default=DEFAULT_MODEL_PATH)
-    parser.add_argument("--metadata-path", type=Path, default=DEFAULT_METADATA_PATH)
-    parser.add_argument("--device", choices=["auto", "gpu", "cpu"], default="auto")
-    parser.add_argument("--max-rows", type=int, default=None)
-    args = parser.parse_args()
 
-    if not args.train_parquet.exists() or not args.dev_parquet.exists():
-        raise SystemExit(f"Parquet files not found: {args.train_parquet} or {args.dev_parquet}")
+    parser.add_argument("--train-parquet", type=Path)
+    parser.add_argument("--dev-parquet", type=Path)
+    parser.add_argument("--device", default="auto")
 
-    print(f"Loading {args.train_parquet}...")
-    df_train = pd.read_parquet(args.train_parquet)
-    print(f"Loading {args.dev_parquet}...")
-    df_dev = pd.read_parquet(args.dev_parquet)
+    args, _ = parser.parse_known_args()
 
-    train(
-        df_train,
-        df_dev,
-        device=args.device,
-        model_path=args.model_path,
-        metadata_path=args.metadata_path,
-        max_rows=args.max_rows,
-    )
+    # 🔥 AUTO PATH FALLBACK
+    train_path = args.train_parquet or DEFAULT_TRAIN_PATH
+    dev_path   = args.dev_parquet or DEFAULT_DEV_PATH
+
+    print(f"Using TRAIN: {train_path}")
+    print(f"Using DEV:   {dev_path}")
+
+    if not train_path.exists():
+        raise FileNotFoundError(f"Train not found: {train_path}")
+    if not dev_path.exists():
+        raise FileNotFoundError(f"Dev not found: {dev_path}")
+
+    df_train = pd.read_parquet(train_path)
+    df_dev   = pd.read_parquet(dev_path)
+
+    train(df_train, df_dev, device=args.device)
 
 
-if __name__ == "__main__":
+import sys
+
+def is_notebook():
+    try:
+        from IPython import get_ipython
+        return get_ipython() is not None
+    except:
+        return False
+
+
+if __name__ == "__main__" and not is_notebook():
     cli_main()
+
+##FOR KAGGLE RUN
+# import pandas as pd
+
+# df_train = pd.read_parquet("/kaggle/input/datasets/awatanshsingh/eta-zoned/train_features.parquet")
+# df_dev   = pd.read_parquet("/kaggle/input/datasets/awatanshsingh/eta-zoned/dev_features.parquet")
+
+# model = train(df_train, df_dev, device="gpu")

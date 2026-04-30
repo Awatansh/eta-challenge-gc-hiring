@@ -5,8 +5,8 @@ Usage:
   python check/compare_models.py [--sample N]
 
 This script loads or trains the baseline `base.pkl` (if missing), loads
-the `solution/model.pkl`, scores both on `data/dev.parquet` (or a
-random sample) and prints MAE and latency numbers.
+the root `model.pkl`, scores both on `data/dev.parquet` (or a random
+sample) and prints MAE and latency numbers.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 DEV_PARQUET = DATA_DIR / "dev.parquet"
 BASELINE_MODEL = ROOT / "base.pkl"
-SOLUTION_MODEL = ROOT / "solution" / "model.pkl"
+SOLUTION_MODEL = ROOT / "model.pkl"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -65,7 +65,7 @@ def load_solution_predictor():
         except Exception as exc:
             raise SystemExit(f"Could not import solution predict(): {exc}")
     if not SOLUTION_MODEL.exists():
-        raise SystemExit(f"Missing {SOLUTION_MODEL} — ensure your solution/ folder contains model.pkl")
+        raise SystemExit(f"Missing {SOLUTION_MODEL} — ensure training wrote model.pkl at repo root")
     return sol_predict
 
 
