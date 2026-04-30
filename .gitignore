@@ -22,7 +22,12 @@ sim/zone_data/
 zone_reference.json
 
 # Model and artifacts
-model.pkl
+# ignore all parquet data (we keep models)
+*.parquet
+
+# allow committed model artifacts
+!solution/model.pkl
+!base.pkl
 
 # Editor / OS
 .vscode/
